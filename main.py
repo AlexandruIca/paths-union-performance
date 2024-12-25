@@ -43,6 +43,7 @@ def perform_union_intervals(paths: List[Any], interval_length=100) -> Any:
 
 
 class Version(Enum):
+    DESCENDING_LENGTH = -1
     NAIVE = 0
     DIVIDE_AND_CONQUER = 1
 
@@ -69,12 +70,20 @@ if __name__ == '__main__':
     end = time.time()
     timings.append((end - start, Version.NAIVE))
 
+    sorted_paths = sorted(paths, key=lambda p: len(p), reverse=True)
+    start = time.time()
+    perform_union_intervals(sorted_paths)
+    end = time.time()
+    timings.append((end - start, Version.DESCENDING_LENGTH))
+
     print('Results (Version: Duration):\n')
 
     sorted_timings = sorted(timings)
     for (t, l) in sorted_timings:
         version = ''
         match l:
+            case Version.DESCENDING_LENGTH:
+                version = 'descl'
             case Version.NAIVE:
                 version = 'naive'
             case _:

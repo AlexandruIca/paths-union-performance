@@ -1,0 +1,4 @@
+autopep8==2.3.1
+pycodestyle==2.12.1
+skia-pathops==0.8.0.post2
+svg.path==6.3

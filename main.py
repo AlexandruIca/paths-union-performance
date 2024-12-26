@@ -2,7 +2,7 @@ import time
 import pathops
 from enum import Enum
 from typing import List, Any
-from helpers import Transform, IDENTITY, read_paths_from_svg, Dimensions, write_output
+from helpers import Transform, IDENTITY, read_paths_from_svg, Dimensions, write_output, skia_to_svg_path
 
 
 def perform_union_naive(paths: List[Any]) -> Any:
@@ -50,7 +50,7 @@ class Version(Enum):
 
 if __name__ == '__main__':
     svg_file_path = 'Flag.svg'
-    (dimensions, paths) = read_paths_from_svg(svg_file_path)
+    (dimensions, paths, colors) = read_paths_from_svg(svg_file_path)
     result = perform_union_intervals(paths)
     stroke_width = min(float(dimensions.width),
                        float(dimensions.height)) / 200.0

@@ -341,7 +341,55 @@ class Dimensions:
     view_box: str
 
 
-def read_paths_from_svg(svg_file_path: str) -> Tuple[Dimensions, List[Any]]:
+def parse_css_color(color: str) -> Tuple[float, float, float, float]:
+    if not color:
+        return (0.0, 0.0, 0.0, 0.0)
+
+    color_str = color.strip().lower()
+
+    if not color_str:
+        return (0.0, 0.0, 0.0, 0.0)
+
+    if color_str.startswith('#'):
+        if all(c in '0123456789abcdef' for c in color_str[1:]):
+            if len(color_str) == 7:
+                r = int(color_str[1:3], 16) / 255.0
+                g = int(color_str[3:5], 16) / 255.0
+                b = int(color_str[5:7], 16) / 255.0
+                return (r, g, b, 1.0)
+            elif len(color_str) == 9:
+                r = int(color_str[1:3], 16) / 255.0
+                g = int(color_str[3:5], 16) / 255.0
+                b = int(color_str[5:7], 16) / 255.0
+                a = int(color_str[7:9], 16) / 255.0
+                return (r, g, b, a)
+
+    if color_str.startswith('rgb'):
+        try:
+            values = color_str[color_str.index(
+                '(') + 1:color_str.rindex(')')].split('', '')
+            values = [v.strip() for v in values]
+
+            if len(values) == 3:
+                r = int(values[0]) / 255.0
+                g = int(values[1]) / 255.0
+                b = int(values[2]) / 255.0
+                return (r, g, b, 1.0)
+            elif len(values) == 4:
+                r = int(values[0]) / 255.0
+                g = int(values[1]) / 255.0
+                b = int(values[2]) / 255.0
+                a = float(values[3])
+                return (r, g, b, a)
+            else:
+                raise ValueError('Invalid color')
+        except (ValueError, IndexError):
+            print(f'Invalid rgb/rgba format: {color_str}')
+
+    return (0.0, 0.0, 0.0, 0.0)
+
+
+def read_paths_from_svg(svg_file_path: str) -> Tuple[Dimensions, List[Any], List[Tuple[float, float, float]]]:
     doc = minidom.parse(svg_file_path)
     root = doc.getElementsByTagName('svg')[0]
     view_box = root.attributes['viewBox'].value
@@ -350,19 +398,27 @@ def read_paths_from_svg(svg_file_path: str) -> Tuple[Dimensions, List[Any]]:
     dimensions = Dimensions(width, height, view_box)
     paths = doc.getElementsByTagName('path')
 
+    colors_data = []
     paths_data = []
+
     for path in paths:
         transform = IDENTITY
+        color = (0.0, 0.0, 0.0)
 
         if 'transform' in path.attributes:
             transform = parse_svg_transform(path.attributes['transform'].value)
 
+        if 'fill' in path.attributes:
+            fill = parse_css_color(path.attributes['fill'].value)
+            color = (fill[0] * fill[3], fill[1] * fill[3], fill[2] * fill[3])
+
         d = path.attributes['d'].value
         path_data = svg_to_skia_path(d, transform)
         paths_data.append(path_data)
+        colors_data.append(color)
 
     doc.unlink()
-    return (dimensions, paths_data)
+    return (dimensions, paths_data, colors_data)
 
 
 def write_output(result: Any, dimensions: Dimensions, stroke_width: float):

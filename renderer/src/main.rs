@@ -6,7 +6,7 @@ use kurbo::{flatten, BezPath, PathEl, Point};
 
 #[derive(Debug, Clone)]
 struct Path {
-    lines: Vec<Point>,
+    lines: Vec<Vec<Point>>,
     fill: [u8; 3],
 }
 
@@ -23,7 +23,7 @@ fn render(
     width: usize,
     height: usize,
     paths: &Vec<Vec<PathEdges>>,
-    indices: &Vec<Path>,
+    reference: &Vec<Path>,
 ) -> Vec<u8> {
     const NUM_CHANNELS: usize = 3;
     let mut result = vec![255_u8; width * height * NUM_CHANNELS];
@@ -37,13 +37,8 @@ fn render(
                 let mut winding = 0_i32;
 
                 for l in path.edges.iter() {
-                    let l0 = indices[path.fill_index].lines[l.line_index - 1];
-                    let l1 = indices[path.fill_index].lines[l.line_index];
-
-                    if (l0.y - l1.y).abs() < 1e-6 {
-                        // Ignore horizontal lines, because we deal with scanlines going horizontally.
-                        continue;
-                    }
+                    let l0 = reference[path.path_index].lines[l.subpath_index][l.line_index - 1];
+                    let l1 = reference[path.path_index].lines[l.subpath_index][l.line_index];
 
                     let in_bounds = p.y > l0.y.min(l1.y) && p.y <= l0.y.max(l1.y);
                     let (l0, l1, dir) = if l0.y > l1.y {
@@ -51,13 +46,14 @@ fn render(
                     } else {
                         (l1, l0, -1_i32)
                     };
+                    // Horizontal lines aren't ignored explicitly, but will be ignored by this result (it will be false)
                     let to_the_right = point_is_to_the_right_of_line(&p, (&l0, &l1));
 
                     winding += ((in_bounds && to_the_right) as i32) * dir;
                 }
 
                 if winding != 0 {
-                    let color = indices[path.fill_index].fill;
+                    let color = reference[path.path_index].fill;
 
                     for i in 0..NUM_CHANNELS {
                         result[(y * width + x) * NUM_CHANNELS + i] = color[i];
@@ -78,7 +74,8 @@ fn main() -> io::Result<()> {
     let file = File::open("flattened.txt")?;
     let reader = BufReader::new(file);
     let mut lines = reader.lines();
-    let mut segments = Vec::<Point>::new();
+    let mut current_segments = Vec::<Point>::new();
+    let mut segments = Vec::<Vec<Point>>::new();
     let mut paths = Vec::<Path>::new();
 
     let header_line = lines
@@ -146,25 +143,31 @@ fn main() -> io::Result<()> {
 
         flatten(path, 0.1, |element| match element {
             PathEl::MoveTo(p) => {
-                if last_point != start_point {
-                    segments.push(start_point);
+                if !current_segments.is_empty() {
+                    segments.push(current_segments.clone());
+                    current_segments.clear();
                 }
-                segments.push(p);
+                current_segments.push(p);
                 start_point = p;
                 last_point = p;
             }
             PathEl::LineTo(p) => {
-                segments.push(p);
+                current_segments.push(p);
                 last_point = p;
             }
             PathEl::ClosePath => {
                 if last_point != start_point {
-                    segments.push(start_point);
+                    current_segments.push(start_point);
                     last_point = start_point;
                 }
             }
             _ => unreachable!(),
         });
+
+        if !current_segments.is_empty() {
+            segments.push(current_segments.clone());
+            current_segments.clear();
+        }
 
         paths.push(Path {
             lines: segments.clone(),
@@ -174,6 +177,7 @@ fn main() -> io::Result<()> {
 
     let sorted = sort_paths(&paths, height as usize);
     let buf = render(width as usize, height as usize, &sorted, &paths);
+
     image::save_buffer(
         "Output.png",
         buf.as_slice(),
@@ -188,13 +192,14 @@ fn main() -> io::Result<()> {
 
 #[derive(Debug, Clone)]
 struct Edge {
+    subpath_index: usize,
     line_index: usize,
 }
 
 #[derive(Debug, Clone)]
 struct PathEdges {
     edges: Vec<Edge>,
-    fill_index: usize,
+    path_index: usize,
 }
 
 // This is a very naive sort for paths. Basically filtering only the paths that are needed for each line.
@@ -204,25 +209,26 @@ fn sort_paths(paths: &Vec<Path>, height: usize) -> Vec<Vec<PathEdges>> {
     let mut result = vec![Vec::<PathEdges>::new(); height];
 
     for i in 0..paths.len() {
-        for j in 1..paths[i].lines.len() {
-            let l = [paths[i].lines[j - 1], paths[i].lines[j]];
+        for j in 0..paths[i].lines.len() {
+            for k in 1..paths[i].lines[j].len() {
+                let l = [paths[i].lines[j][k - 1], paths[i].lines[j][k]];
 
-            let start_y = l[0].y.min(l[1].y).floor() as usize;
-            let end_y = (l[0].y.max(l[1].y).ceil() as usize + 1).min(height);
+                let start_y = l[0].y.min(l[1].y).floor() as usize;
+                let end_y = (l[0].y.max(l[1].y).ceil() as usize + 1).min(height);
 
-            for y in start_y..end_y {
-                if result[y].is_empty() || (result[y].last().unwrap().fill_index != i) {
-                    result[y].push(PathEdges {
-                        edges: Vec::<Edge>::new(),
-                        fill_index: i,
+                for y in start_y..end_y {
+                    if result[y].is_empty() || (result[y].last().unwrap().path_index != i) {
+                        result[y].push(PathEdges {
+                            edges: Vec::<Edge>::new(),
+                            path_index: i,
+                        });
+                    }
+
+                    result[y].last_mut().unwrap().edges.push(Edge {
+                        subpath_index: j,
+                        line_index: k,
                     });
                 }
-
-                result[y]
-                    .last_mut()
-                    .unwrap()
-                    .edges
-                    .push(Edge { line_index: j });
             }
         }
     }

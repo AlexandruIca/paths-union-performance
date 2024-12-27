@@ -2,7 +2,7 @@ import time
 import pathops
 from enum import Enum
 from typing import List, Any
-from helpers import Transform, IDENTITY, read_paths_from_svg, Dimensions, write_output, skia_to_svg_path
+from helpers import Transform, IDENTITY, read_paths_from_svg, Dimensions, write_output, skia_to_svg_path, overlap_order
 
 
 def perform_union_naive(paths: List[Any]) -> Any:
@@ -43,6 +43,7 @@ def perform_union_intervals(paths: List[Any], interval_length=100) -> Any:
 
 
 class Version(Enum):
+    SORTED_OVERLAP = -2
     DESCENDING_LENGTH = -1
     NAIVE = 0
     DIVIDE_AND_CONQUER = 1
@@ -76,12 +77,23 @@ if __name__ == '__main__':
     end = time.time()
     timings.append((end - start, Version.DESCENDING_LENGTH))
 
+    new_paths = []
+    for idx in overlap_order:
+        new_paths.append(paths[idx])
+
+    start = time.time()
+    perform_union_intervals(new_paths, interval_length=16)
+    end = time.time()
+    timings.append((end - start, Version.SORTED_OVERLAP))
+
     print('Results (Version: Duration):\n')
 
     sorted_timings = sorted(timings)
     for (t, l) in sorted_timings:
         version = ''
         match l:
+            case Version.SORTED_OVERLAP:
+                version = 'overlap'
             case Version.DESCENDING_LENGTH:
                 version = 'descl'
             case Version.NAIVE:
@@ -89,5 +101,5 @@ if __name__ == '__main__':
             case _:
                 version = l
 
-        print(f'\t- {version:6}: {t:.4f}s')
+        print(f'\t- {version:8}: {t:.4f}s')
     print()

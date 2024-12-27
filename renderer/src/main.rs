@@ -1,3 +1,5 @@
+use std::cmp::Reverse;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 
@@ -24,13 +26,16 @@ fn render(
     height: usize,
     paths: &Vec<Vec<PathEdges>>,
     reference: &Vec<Path>,
-) -> Vec<u8> {
+) -> (Vec<u8>, Vec<(usize, usize)>) {
     const NUM_CHANNELS: usize = 3;
     let mut result = vec![255_u8; width * height * NUM_CHANNELS];
+    let mut overlapping = Vec::<usize>::new();
+    let mut overlap_counter = HashMap::<usize, usize>::new();
 
     for y in 0..height {
         for x in 0..width {
             let p = Point::new(x as f64 + 0.5, y as f64 + 0.5);
+            overlapping.clear();
 
             for path in paths[y].iter() {
                 // Non-zero winding only. Support for even-odd can be added trivially, but we don't need it for our example.
@@ -58,12 +63,35 @@ fn render(
                     for i in 0..NUM_CHANNELS {
                         result[(y * width + x) * NUM_CHANNELS + i] = color[i];
                     }
+
+                    overlapping.push(path.path_index);
+                }
+            }
+
+            if overlapping.len() > 1 {
+                for overlap in overlapping.iter() {
+                    if let Some(count) = overlap_counter.get(overlap) {
+                        overlap_counter.insert(*overlap, count + 1);
+                    } else {
+                        overlap_counter.insert(*overlap, 1);
+                    }
                 }
             }
         }
     }
 
-    result
+    let mut overlaps = Vec::<(usize, usize)>::with_capacity(reference.len());
+    for i in 0..reference.len() {
+        if let Some(count) = overlap_counter.get(&i) {
+            overlaps.push((i, *count));
+        } else {
+            overlaps.push((i, 0));
+        }
+    }
+
+    overlaps.sort_by_key(|(_id, count)| Reverse(*count));
+
+    (result, overlaps)
 }
 
 fn to_u8(channel: f64) -> u8 {
@@ -176,7 +204,13 @@ fn main() -> io::Result<()> {
     }
 
     let sorted = sort_paths(&paths, height as usize);
-    let buf = render(width as usize, height as usize, &sorted, &paths);
+    let (buf, overlaps) = render(width as usize, height as usize, &sorted, &paths);
+
+    print!("[");
+    for (id, _) in overlaps {
+        print!("{}, ", id);
+    }
+    println!("]");
 
     image::save_buffer(
         "Output.png",

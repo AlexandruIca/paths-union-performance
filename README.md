@@ -2,7 +2,7 @@
 
 # Unintuitive Optimization For Performing Paths Union
 
-This is a standalone example of how performing union on a lot of paths can be done quickly. This was part of a real-world task I had to solve at one of my previous jobs.
+This is a standalone example of how performing union on a lot of paths can be done quickly. It was part of a real-world task I had to solve at one of my previous jobs. It's also the source code for [this](https://minus-ze.ro/posts/unintuitive-optimization-for-performing-paths-union/) blog post.
 
 The test case is `Flag.svg`. Computing the union of all paths is done using Skia's PathOps. Running `python main.py` will output the final contour to `Contour.svg`.
 

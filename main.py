@@ -5,19 +5,18 @@ from typing import List, Any
 from helpers import Transform, IDENTITY, read_paths_from_svg, Dimensions, write_output, skia_to_svg_path, overlap_order
 
 
-def perform_union_naive(paths: List[Any]) -> Any:
+def perform_union_all(paths: List[Any]) -> Any:
     if len(paths) == 0:
         return None
     if len(paths) == 1:
         return paths[0]
 
-    result = paths[0]
+    result = pathops.OpBuilder()
 
     for path in paths[1:]:
-        new_path = pathops.op(result, path, pathops.PathOp.UNION)
-        result = new_path
+        result.add(path, pathops.PathOp.UNION)
 
-    return result
+    return result.resolve()
 
 
 def perform_union_intervals(paths: List[Any], interval_length=100) -> Any:
@@ -34,19 +33,19 @@ def perform_union_intervals(paths: List[Any], interval_length=100) -> Any:
         for i in range(iterations + 1):
             start_index = i * interval_length
             end_index = (i + 1) * interval_length
-            results.append(perform_union_naive(paths[start_index:end_index]))
+            results.append(perform_union_all(paths[start_index:end_index]))
         result = perform_union_intervals(results)
     else:
-        result = perform_union_naive(paths)
+        result = perform_union_all(paths)
 
     return result
 
 
 class Version(Enum):
+    ALL_UNION = -3
     SORTED_OVERLAP = -2
     DESCENDING_LENGTH = -1
     NAIVE = 0
-    DIVIDE_AND_CONQUER = 1
 
 
 if __name__ == '__main__':
@@ -58,6 +57,15 @@ if __name__ == '__main__':
     write_output(result, dimensions, stroke_width)
 
     timings = []
+
+    result = paths[0]
+    start = time.time()
+    for path in paths[1:]:
+        new_path = pathops.op(result, path, pathops.PathOp.UNION)
+        result = new_path
+    end = time.time()
+    timings.append((end - start, Version.NAIVE))
+
     for length in [2, 12, 36, 50, 100, 200]:
         start = time.time()
         result = perform_union_intervals(paths, interval_length=length)
@@ -67,9 +75,9 @@ if __name__ == '__main__':
         timings.append((duration, length))
 
     start = time.time()
-    perform_union_naive(paths)
+    perform_union_all(paths)
     end = time.time()
-    timings.append((end - start, Version.NAIVE))
+    timings.append((end - start, Version.ALL_UNION))
 
     sorted_paths = sorted(paths, key=lambda p: len(p), reverse=True)
     start = time.time()
@@ -82,7 +90,7 @@ if __name__ == '__main__':
         new_paths.append(paths[idx])
 
     start = time.time()
-    perform_union_intervals(new_paths, interval_length=16)
+    perform_union_intervals(new_paths)
     end = time.time()
     timings.append((end - start, Version.SORTED_OVERLAP))
 
@@ -92,6 +100,8 @@ if __name__ == '__main__':
     for (t, l) in sorted_timings:
         version = ''
         match l:
+            case Version.ALL_UNION:
+                version = 'all'
             case Version.SORTED_OVERLAP:
                 version = 'overlap'
             case Version.DESCENDING_LENGTH:
@@ -101,5 +111,5 @@ if __name__ == '__main__':
             case _:
                 version = l
 
-        print(f'\t- {version:8}: {t:.4f}s')
+        print(f'\t- {version:>8}: {t:.4f}s')
     print()
